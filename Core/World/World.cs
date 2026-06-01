@@ -90,7 +90,7 @@ namespace FayteWo.Core.World
     public class WorldMap
     {
         public Dictionary<ChunkPosition, Chunk> chunks = new();
-        public Dictionary<TilePosition, TileStack> tileObjectStacks = new();
+        public Dictionary<TilePosition, TileStack> tileStacks = new();
         
         public void AddChunk(Chunk chunk)
         {
@@ -129,7 +129,7 @@ namespace FayteWo.Core.World
             {
                 tile = TileFactory.CreateFromDef(pos.x, pos.y, pos.z, def);
             }
-            if(tileObjectStacks.TryGetValue(pos, out TileStack? stack))
+            if(tileStacks.TryGetValue(pos, out TileStack? stack))
             {
                 if(tile != null) tile.objects = stack.Clone();
             }
@@ -138,7 +138,40 @@ namespace FayteWo.Core.World
         public bool TrySetTile(TilePosition pos, int id)
         {
             if(!TryGetChunkPosition(pos, out Chunk? chunk)) return false;
+            int _x = Chunk.ChunkCoordinate(pos.x);
+            int _y = Chunk.ChunkCoordinate(pos.y);
+            int _z = Chunk.ChunkCoordinate(pos.z);
+            if(chunk != null)
+            {
+                if(!chunk.ContainsPosition(_x, _y, _z)) return false;
+                chunk.SetID(_x, _y, _z);
+            }
+            return true;
+        }
+        public bool TryAddObjectToTile(TilePosition pos, TileStackEntry entry)
+        {
+            if(!TryGetTileID(pos, out _)) return false;
+            if(!tileStacks.TryGetValue(pos, out TileStack? stack))
+            {
+                stack = new TileStack();
+                tileStacks[pos] = stack;
+            }
+            return stack.TryToAddObject(entry);
+        }
+        public bool TryRemoveFirstObjectFromTile(TilePosition pos, string id, out TileStackEntry entry)
+        {
+            entry = null;
+            if(!tileStacks.TryGetValue(pos, out TileStack? stack)) return false;
+            bool removed = stack.RemoveFirstObjectByDef(id, out entry) && entry != null;
+            if(removed && entry != null && stack.StackCount() == 0) tileStacks.Remove(pos);
+            return removed;
+        }
+        public bool TryGetObjectStack(TilePosition pos, out TileStack? stack)
+        {
+            stack = null;
+            if(!tileStacks.TryGetValue(pos, out TileStack? exists)) return false;
+            stack = exists.Clone();
+            return true;
         }
     }
-
 }

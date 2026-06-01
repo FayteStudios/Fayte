@@ -426,6 +426,23 @@ namespace FayteWO.Core.World
         {
             return objects.Count;
         }
+        public bool RemoveFirstObjectByDef(string id, out TileStackEntry? entry)
+        {
+            entry = null;
+            TileStackEntry? match = null;
+            foreach(TileStackEntry item in objects)
+            {
+                if (string.Equals(item.objectDefID, id, StringComparison.OrdinalIgnoreCase))
+                {
+                    match = item;
+                }
+                break;
+            }
+            if(match == null) return false;
+            objects.Remove(match);
+            entry = match;
+            return true;
+        }
 
         public TileStack Clone()
         {
