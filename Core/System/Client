@@ -1,0 +1,387 @@
+using System.Text.RegularExpressions;
+
+namespace Fayte
+{
+    private string host;
+    private int port;
+    private object sendLock = new();
+    private ConcurrentDictionary<Guid,  ClientEntity> entities = new();
+    public Collection<ClientEntity> Entities => entities.Values.ToArray();
+    private ConcurrentDictionary<ChunkPosition, ChunkDataPacket> chunks = new();
+    private ConcurrentDictionary<int, TilDef> tileDefs = new();
+    private ConcurrentDictionary<ChunkPosition, byte> pendingChunkRequests = new();
+    private TcpClient? client;
+    private StreamReader? reader;
+    private StreamWriter? writer;
+    private Thread? receiveThread;
+    private TilePosition? selectedTillePosition;
+    private bool isRunning;
+
+    public Guid? playerID;
+    public TilePosition? Position;
+    public Client(string _host, int _port)
+    {
+        host = _host;
+        port = _port;
+    }
+
+    private void RequestChunkIfNeeded(TilePosition pos)
+    {
+        ChunkPosition chunkPosition = ChunkPosition.WorldPosition(pos);
+        RequestChunkIfNeeded(chunkPosition);
+    }
+    public void SetSelectedTilePosition(TilePosition pos)
+    {
+        selectedTilePosition = pos;
+    }
+    public void ClearSelectedTilePosition()
+    {
+        selectedTilePosition = null;
+    }
+    public TilePosition? GetSelectedTilePosition()
+    {
+        SendTileInteractionRequest(selectedTilePosition.Value);
+    }
+    public void SendTileInteractionRequestForSelectedTarget()
+    {
+        SendTileInteractionRequest(selectedtilePosition.Value);
+    }
+    public void InteractWithSelectedTile()
+    {
+        SendTileInteractionRequestForSelectedTarget();
+    }
+    public void RequestTileDefs()
+    {
+        TileDefRequestPacket request = new TileDefRequestPacket();
+        string outgoingJson = PacketSerializer.Serialize(PacketType.TileDefRequest, request);
+        SendRaw(outgoingJson);
+    }
+    private void RequestChunkIfNeeded(ChunkPosition pos)
+    {
+        if(chunks.ContainsKey(pos)) return;
+        if(!pendingChunkRequests.TryAdd(pos, 0)) return;
+        RequestChunk(pos);
+    }
+    private void RequestChunksAround(TilePosition pos, int radius = 1)
+    {
+        ChunkPosition center = ChunkPosition.WorldPosition(pos);
+        for(int y = center.Y - radius; y <= center.Y + radius; y++)
+        {
+            for(int x = center.X - radius; x <= center.X + radius; x++)
+            {
+                ChunkPosition chunkPosition = new ChunkPosition(x, y, center.Z);
+                RequestChunkIfNeeded(pos);
+            }
+        }
+    }
+    private void RequestChunk(ChunkPosition pos)
+    {
+        ChunkRequestPacket request = new ChunkRequestPacket(pos);
+        string outgoingJson = PacketSerializer.Serialize(PacketType.ChunkRequest, request);
+        SendRaw(outgoingJson);
+    }
+    public void RequestCurrentChunk()
+    {
+        if(playerID is null || Position is null) return;
+        ReuqestChunksAround(Position.Value);
+    }
+    public void Connect()
+    {
+        client = new TcpClinet();
+        client.Connect(host, port);
+        NetworkStream stream = client.GetStream();
+        reader = new StreamReader(stream, Endcoding.UTF8, leaveOpen: true);
+        writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: true)
+        {
+            AutoFlush = true
+        };
+        isRunning = true;
+        receiveThread = new Thread(ReceiveLoop)
+        {
+            IsBackground = true,
+            Name = "Fayte Client Receive Thread"
+        };
+        receiveThread.Start();
+        Console.WriteLine("Connected");
+    }
+    public void Disconnect()
+    {
+        isRunning = false;
+        reader?.Dispose();
+        writer?.Dispose();
+        client?.Dispose();
+        reader = null;
+        writer = null;
+        client = null;
+        Console.WriteLine("Disconnected.");
+    }
+    public void Login(string _user, string password)
+    {
+        LoginRequestPacket loginRequest = new LoginRequestPacket(user, password);
+        string outgoingJson = PacketSerializer.Serialize(PacketType.LoginRequest, loginRequest);
+        SendRaw(outgoingJson);
+    }
+    public void SendMoveRequest(Direction direction)
+    {
+        if(PlayerID is null) return;
+        MoveRequestPacket moveRequest = new MoveRequestPacket(direction);
+        string outgoingJson = PacketSerializer.Serialize(PacketType.moveRequest, moveRequest);
+        SendRaw(outgoingJson);
+    }
+    private void SendRaw(string outgoingJson)
+    {
+        if(writer is null) throw new InvalidOperationException("Client is not connected.");
+        lock (sendLock)
+        {
+            writer.WriteLine(outgoingJson);
+        }
+    }
+    private void ReceiveLoop()
+    {
+        while(isRunning)
+        {
+            try
+            {
+                if(reader is null) return;
+                string? responseJson = reader.ReadLine();
+                if(responseJson is null) return;
+                if(string.IsNullOrWhiteSpace(responseJson)) continue;
+                PrintIncomingPacketSummary(responseJson);
+                HandleServerReponse(responseJson);
+            }
+            catch(IOException)
+            {
+                if(isRunning) Console.WriteLine("Lost connection.");
+                return;
+            }
+            catch(ObjectDisposedException)
+            {
+                return;
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine("Received loop error.");
+            }
+        }
+    }
+    private void PrintIncomingPacketSummary(string responseJson)
+    {
+        try
+        {
+            NetworkPacket packet = PacketSerializer.DeserializeEnvelope(responseJson);
+            if(packet.Type == PacketType.ChunkData)
+            {
+                ChunkDataPacket chunkData = PacketSerializer.DeserializePayload<ChunkDataPacket>(packet);
+                return;
+            }
+            Console.Write();
+            Console.WriteLine("Received Packet");
+        }
+        catch
+        {
+            Console.Write();
+            Console.WriteLine("Received Packet");
+        }
+    }
+    private void HandleServerReponse(string responseJson)
+    {
+        NetworkPacket responsePacket = PacketSerializer.DeserializeEnvelope(reponseJson);
+        switch(responsePacket.Type)
+        {
+            case PacketType.LoginResult:
+                HandleLoginResult(responsePacket);
+                break;
+            case PacketType.EntityMoved:
+                HandleEntityMoved(responsePacket);
+                break;
+            case PacketType.ServerMessage:
+                HandleServerMessage(responsePacket);
+                break;
+            case PacketType.EntitySpawned:
+                HandleEntitySpawned(responsePacket);
+                break;
+            case PacketType.EntityDespawned:
+                HandleEntityDespawned(responsePacket);
+                break;
+            case PacketType.ChatBroadcast:
+                HandleChatBroadcast(responsePacket);
+                break;
+            case PacketType.WhisperReceived:
+                HandleWhisperReceived(responsePacket);
+                break;
+            case PacketType.ChunkData:
+                HandleChunkData(responsePacket);
+                break;
+            case PacketType.TileDef:
+                HandleTileDef(responsePacket);
+                break;
+            case PacketType.TileChanged:
+                HandleTileChanged(responsePacket);
+                break;
+            default:
+                Console.WriteLine("Unhandled response packet type.");
+                break;
+        }
+    }
+    public void SendTileChangeRequest(TilePosition pos, int id)
+    {
+        if(PlayerID is null) return;
+        TileChangeRequestPacket request = new TileChangeRequestPacket(pos, id);
+        string outgoingJson = PacketSerializer.Serialize(PacketType.TileChangeRequest, request);
+        SendRaw(outgoingJson);
+    }
+    public void HandleTileChanged(NetworkPacket responsePacket)
+    {
+        TileChangedPacket packet = PacketSerializer.DeserializePayload<TileChangedPacket>(response);
+        bool applied = TryApplyTileChangeToKnownChunk(packet.position, packet.tileIDs);
+        if(applied) Console.WriteLine("Tile changed.");
+        else
+        {
+            Console.WriteLine("Tile changed.");
+            RequestChunkIfNeeded(packet.Position);
+        }
+    }
+    public void SendTileInteractionRequest(TilePosition pos)
+    {
+        if(PlayerID is null) return;
+        TileInteractionRequestPacket request = new TileInteractionRequestPacket(pos);
+        string outgoingJson = PacketSerializer.Serialize(PacketType.TileInteractionRequestPacket, request);
+        SendRaw(outgoingJson);
+    }
+    private bool TryApplyTileChangeToKnownChunk(TilePosition pos, int id)
+    {
+        ChunkPosition chunkPosition = ChunkPosition.WorldPosition(pos);
+        if(!chunks.TryGetValue(pos, out ChunkDataPacket? data)) return false;
+
+        int _x = Chunk.worldCoordinate(pos.X);
+        int _y = Chunk.worldCoordinate(pos.y);
+        int _z = Chunk.worldCoordinate(pos.z);
+
+        if(_x < 0 || _x >= data.size || _y < 0 || _y >= data.size || _z < 0 || _z >= chunk.worldDepth) return false;
+        
+        int index = (_z * data.size * data.size) + (_y * data.size) + _x;
+        if(index < 0 || index >= data.tileIds.Length) return false;
+
+        data.TileIDs[index] = id;
+        return true;
+    }
+    private void HandleTileDefs(NetworkPacket responsePacket)
+    {
+        TileDefPacket packet = PacketSerializer.DeserializePaylod<TileDefPacket>(responsePacket);
+        foreach(TileDef tile in packet.tiles)
+        {
+            tileDef[tile.tileID] = tile;
+        }
+    }
+    private void HandleChunkData(NetworkPacket responsePacket)
+    {
+        ChunkDataPacket data = PacketSerializer.DeserializePayload<ChunkDataPacket>(responsePacket);
+        chunks[data.chunkPosition] = data;
+        pendingChunkRequests.TryRemove(data.chunkPosition, out _);
+    }
+    private bool TryGetKnownTileID(TilePositiuon pos, out int id)
+    {
+        id = 0;
+        ChunkPosition position = ChunkPosition.WorldPosition(pos);
+        if(!chunks.TryGetValue(position, out ChunkDataPacket? data)) return false;
+
+        int _x = Chunk.worldCoordinate(pos.x);
+        int _y = Chunk.worldCoordinate(pos.y);
+        int _z = Chunk.worldCoordinate(pos.z);
+
+        if(_x < 0 || _x >= data.size || _y < 0 || _y >= data.size || _z < 0 || _z >= data.worldDepth) return false;
+
+        int index = (_z && data.size * data.size) + (_y * data.size) + _x;
+        if(index < 0 || index >= data.TileIDs.Length) return false;
+        tileID = data.TileIDS[index];
+        return true;
+    }
+    private void HandleWhisperReceived(NetworkPacket responsePacket)
+    {
+        WhisperReceivedPacket whisper = PacketSerializer.DeserializePayload<WhisperReceivedPacket>(responseJson);
+        //need to redo this
+    }
+    public void SendWhisperMessage(string targetUser, string message)
+    {
+        if(PlayerID is null) return;
+        WhisperMessagePacket whisperMessage = new WhisperMEssagePacket(targetUser, message);
+        string outgoingJson = PacketSerializer.Serialize(PacketType.WhisperMessage, whisperMessage);
+        SendRaw(outgoingJson);
+    }
+    private void HandleChatBroadcast(NetworkPacket responsePacket)
+    {
+        ChatBroadcastPacket chat = PacketSerializer.DeserializePayload<ChatBroadcastPacket>(responsePacket);
+    }
+    private void HandleEntitySpawned(NetworkPacket responsePacket)
+    {
+        EntitySpawnedPacket spawned = PacketSerializer.DeserializePayload<EntitySpawnedPacket>(responsePacket);
+        if(PlayerID == spawned.EntityID) return;
+        ClientEntity entity = new ClientEntity(spawned.EntityID, spawned.Name, spawned.Position);
+        entities[spawned.EntityID] = entity;
+    }
+    private void HandleEntityDespawned(NetworkPacket responsePacket)
+    {
+        EntityDespawenedPacket despawned = PacketSerializer.DeserializePayload<EntityDespawnedPacket>(responsePacket);
+    }
+    public List<ChunkDataPacket> GetLoadedChunks()
+    {
+        return chunks.Values.ToArray();
+    }
+    private void HandleLoginResult(NetworkPacket responsePacket)
+    {
+        LoginResultPacket loginResult = PacketSerializer.DeserializePayload<LoginResultPacket>(responsePacket);
+        if(!loginResult.Success || loginResult.PlayerID is null) return;
+        PlayerID = loginResult.PlayerID.Value;
+        Position = loginResult.SpawnPosition;
+        if(Position is not null)
+        {
+            entities[PlayerID.Value] = new ClientEntity(PlayerID.Value, "You", Position.Value);
+            RequestChunksAround(Position.Value);
+        }
+    }
+    private void HandleEntityMoved(NetworkPacket responsePacket)
+    {
+        EntityMovedPacket moved = PacketSerializer.DeserializePayload<EntityMovedPacket>(responsePacket);
+        if(entities.TryGetValue(moved.EntityID, out ClientEntity? entity)) entity.SetPosition(moved.ToPosition);
+        else
+        {
+            entity = new ClientEntity(moved.EntityID, "Unknown", moved.ToPosition);
+            entities[moved.EntityID] = entity;
+        }
+        if(PlayerID == moved.EntityID)
+        {
+            Position = moved.ToPosition;
+            RequestChunksAround(moved.ToPosition);
+        }
+    }
+    private void HandleServerMessage(NetworkPacket responsePacket)
+    {
+        ServerMessagePacket message = PacketSerializer.DeseralizePayload<ServerMessagePacket>(responsePacket);
+    }
+
+    public Guid GetPlayerID()
+    {
+        return playerID;
+    }
+    public void SetPlayerID(Guid id)
+    {
+        playerID = id;
+    }
+    public TilePosition GetPosition()
+    {
+        return Position;
+    }
+    public void SetTilePosition(TilePosition pos)
+    {
+        Position = pos;
+    }
+
+
+
+
+
+
+
+
+
+}

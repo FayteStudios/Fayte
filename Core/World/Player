@@ -1,0 +1,35 @@
+namespace Fayte.Core.World
+{
+    public class PlayerState
+    {
+        public Guid playerID;
+        public string playerName = "";
+        public TilePosition position;
+
+        public PlayerState(Guid id, string name, TilePosition pos)
+        {
+            playerID = id;
+            playerName = name;
+            position = pos;
+        }
+
+
+        public Guid GetPlayerID()
+        {
+            return playerID;
+        }
+        public string GetPlayerName()
+        {
+            return playerName;
+        }
+        public TilePosition GetPosition()
+        {
+            return position;
+        }
+        public void SetPosition(TilePosition pos)
+        {
+            //check occupied?
+            position = pos;
+        }
+    }
+}

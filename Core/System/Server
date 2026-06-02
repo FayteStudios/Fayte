@@ -1,0 +1,18 @@
+namespace Fayte
+{
+    public class Server
+    {
+        private int grassID = 1;
+        private int wallID = 2;
+        private int waterID = 3;
+        private int port;
+        private WorldMap worldMap = new();
+        private MovementSystem movementSystem;
+        private List<TileDef> tileDefs;
+        private ConcurrentDictionary<Guid, PlayerState> players = new();
+        private ConcurrentDictionary<Guid, ClientSession> sessions = new();
+        private ConcurrentDictionary<string, Guid> onlineUsers = new();
+        private TcpListener? listener;
+        private bool isRunning;
+    }
+}

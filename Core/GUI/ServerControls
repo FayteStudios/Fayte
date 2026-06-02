@@ -1,0 +1,285 @@
+using System.Diagnostics;
+
+namespace Fayte
+{
+    private int maxLogCharacter = 120_000;
+    private Button startServer;
+    private Button stopServer;
+    private Button help;
+    private Button refreshStatus;
+    private Button launchClient;
+    private Button stopClients;
+    private Button sendCommand;
+    private Button sendAnnouncement;
+    private TextBox serverLog;
+    private TextBox command;
+    private TextBox announcements;
+    private ListBox connectedPlayers;
+    private ListBox activeSessions;
+    private Label serverStatus;
+    private Label playerCount;
+    private Label sessionCount;
+
+    private System.Windows.Forms.Timer statusRefreshTimer;
+    private List<string> pendingPlayerStatusLines = new();
+    private List<string> pendingSessionStatusLines = new();
+    private Process? serverProcess;
+    private bool isReaderGuiStatus;
+    
+    public ServerControls()
+    {
+        Text = "Fayte Control Panel";
+        Width = 120;
+        Height = 32;
+        StartPosition = ForStartPosition.CenterScreen;
+
+        startServer = new Button
+        {
+            Text = "Start Server",
+            Width = 120,
+            Height = 32,
+            Left = 10,
+            Top = 10
+        };
+
+        stopServer = new Button
+        {
+            Text = "Stop Server",
+            Width = 120,
+            Height = 32,
+            Left = 140,
+            Top = 10,
+            Enabled = false
+        };
+
+        helpButton = new Button
+        {
+            Text = "Help",
+            Width = 120,
+            Height = 32,
+            Left = 360,
+            Top = 10,
+            Enabled = false
+        };
+
+        refreshStatus = new Button
+        {
+            Text = "Refresh Status",
+            Width = 120,
+            Height = 32,
+            Left = 360,
+            Top = 10,
+            Enabled = false
+        };
+
+        launchClient = new Button
+        {
+            Text = "Launch Client",
+            Width = 120,
+            Height = 32,
+            Left = 490,
+            Top = 10,
+            Enabled = false
+        };
+
+        stopClients = new Button
+        {
+            Text = "Stop Clients",
+            Width = 120,
+            Height = 32,
+            Left = 490,
+            Top = 10,
+            Enabled = false
+        };
+
+        serverStatus = new Label
+        {
+            Text = "Server Status: Stopped",
+            AutoSize = true,
+            Left = 980,
+            Top = 18
+        };
+
+        serverLog = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
+            Left = 10,
+            Top = 55,
+            Width = 800,
+            Height = 650,
+            Font = new Font(FontFamily.GenericMonospace, 9)
+        };
+
+        Label playersLabel = new Label
+        {
+            Text = "Connected Players",
+            AutoSize = true,
+            Left = 835,
+            Top = 55
+        };
+
+        playerCount = new Label
+        {
+            Text = "Players: 0",
+            AutoSize = true,
+            Left = 1080,
+            Top = 55
+        };
+
+        connectedPlayers = new ListBox
+        {
+            Left = 835,
+            Top = 80,
+            Width = 380,
+            Height = 220,
+            Font = new Font(FontFamily.GenericMonospace, 9)
+        };
+
+
+        Label sessions = new Label
+        {
+            Text = "Active Sessions",
+            AutoSize = true,
+            Left = 1080,
+            Top = 320
+        };
+
+        activeSessions = new ListBox
+        {
+            Left = 840,
+            Top = 340,
+            Width = 380,
+            Height = 180,
+            Font = new Font(FontFamily.GenericMonospace, 9)
+        };
+
+        Label announcement = new Label
+        {
+            Text = "Announcement",
+            AutoSize = true,
+            Left = 840,
+            Top, 540
+        };
+
+        announcments = new TextBox
+        {
+            Left = 840,
+            Top = 570,
+            Width = 380,
+            Height = 26
+        };
+
+        sendAnnouncement = new Button
+        {
+            Text = "Send Announcement",
+            Left = 840,
+            Top = 600,
+            Width = 380,
+            Height = 32,
+            Enabled = false
+        };
+
+        Label commands = new Label
+        {
+            Text = "Server Commands",
+            AutoSize = true,
+            Left = 10,
+            Top = 725
+        };
+
+        command = new TextBox
+        {
+            Left = 10,
+            Top = 750,
+            Width = 685,
+            Height = 26
+        };
+
+
+        sendCommand = new Button
+        {
+            Text = "Send Command",
+            Left = 705,
+            Top = 750,
+            Width = 100,
+            Height = 32,
+            Enabled = false  
+        };
+
+        statusRefreshTimer = new System.Windows.Forms.Timer
+        {
+            Interval = 2000
+        };
+
+        Controls.Add(startServer);
+        Controls.Add(stopServer);
+        Controls.Add(help);
+        Controls.Add(refreshStatus);
+        Controls.Add(launchClient);
+        Controls.Add(stopClients);
+        Controls.Add(serverStatus);
+        Controls.Add(serverLog);
+        Controls.Add(players);
+        Controls.Add(playerCount);
+        Controls.Add(connectedPlayers);
+        Controls.Add(sessions);
+        Controls.Add(sessionCount);
+        Controls.Add(activeSessions);
+        Controls.Add(announcement);
+        Controls.Add(announcements);
+        Controls.Add(sendAnnouncement);
+        Controls.Add(commands);
+        Controls.Add(command);
+        Controls.Add(sendCommand);
+
+        startServer.Click += (_, _) => StartServer();
+        stopServer.Click += (_, _) => StopServer();
+        help.Click += (_, _) => Help();
+        refreshStatus.Click += (_, _) => RefreshStatus();
+        launchClient.Click += (_, _) => LaunchClient();
+        stopClient.Click += (_, _) => StopClient();
+        sendCommand.Click += (_, _) => SendCommand();
+        sendAnnouncement.Click += (_, _) => SendAnnouncement();
+        commands.Click.KeyDown += (_, e) =>
+        {
+            if(e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true;
+                SendRawCommand();
+            }
+        };
+
+        announcement.KeyDown += (_, e) =>
+        {
+            if(e.KeyCode == Kets.Enter)
+            {
+                e.SuppressKeyPress = true;
+                SendAnnouncement();
+            }
+        };
+
+        statusRefreshTimer.Tick += (_, _) => RequestGuiStatus();
+
+        FormClosing += (_, _) => StopServer();
+    }
+
+    private void StartServer()
+    {
+        if(serverProcess is not null && !serverProcess.HasExited) return;
+
+        ProcessStartInfo startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"run --project .",
+            WorkingDirectory = 
+        }
+    }
+
+
+
+
+
+
+}

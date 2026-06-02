@@ -1,0 +1,24 @@
+namespace Fayte
+{
+    public class MovementSystem
+    {
+        private WorldMap worldMap;
+        private Dictionary<int, Tile> tileDefs;
+
+        public MovementSystem(Worldmap map, IEnumerable<Tile> defs)
+        {
+            worldmap = map;
+            tileDefs = defs.ToDictionary(tile => tile.tileID);
+        }
+        public bool TryMove(PlayerState player, Direction direction, out string reason)
+        {
+            TilePosition targetPosition = player.position.Offset(direction);
+            if(!worldMap.TryGetTileID(targetPosition, out int targeTileID)) return false;
+            if(!tileDefs.TryGetValue(targetTileID, out Tile? targetTile)) return false;
+            if(targetTile.blocksMovement) return false;
+
+            player.SetPosition(targetPosition);
+            return true;
+        }
+    }
+}

@@ -1,0 +1,123 @@
+namespace Fayte
+{
+    public class LoginForm : Form
+    {
+        private TextBox usernameBox;
+        private Button loginButton;
+        private Button cancelButton;
+        private Label statusLabel;
+        private string username = "";
+
+        public LoginForm()
+        {
+            Text = "Fayte Login";
+            StartPosition = ForStartPosition.CenterScreen;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            Width = 420;
+            Height = 320;
+
+            Label titleLabel = new Label
+            {
+                Text = "Fayte",
+                AutoSize = false,
+                Left = 20,
+                Top = 20,
+                Width = 360,
+                Height = 36,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font(FontFamily.GenericSansSerif, 20, FontStyle.Bold)
+            };
+
+            Label usernameLabel = new Label
+            {
+                Text = "Username",
+                AutoSize = true,
+                Left = 50,
+                Top = 80
+            };
+
+            usernameBox = new TextBox
+            {
+                Left = 50,
+                Top = 105,
+                Width = 300,
+                Height = 28,
+                MaxLength = 16
+            };
+
+            loginButton = new Button
+            {
+                Text = "Login",
+                Left = 50,
+                Top = 150,
+                Width = 140,
+                Height = 34
+            };
+
+            cancelButton = new Button
+            {
+                Text = "Cancel",
+                Left = 210,
+                Top = 150,
+                Width = 140,
+                Height = 34
+            };
+
+            statusLabel = new Label
+            {
+                Text = "Enter your username to connect.",
+                AutoSize = false,
+                Left = 50,
+                Top = 195,
+                Width = 300,
+                Height = 24,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+
+            Controls.Add(titleLabel);
+            Controls.Add(usernameLabel);
+            Controls.Add(usernameBox);
+            Controls.Add(loginButton);
+            Controls.Add(cancelButton);
+            Controls.Add(statusLabel);
+
+            AcceptButton = loginButton;
+            CancelButton = cancelButton;
+
+            usernameBox.TextChanged += (_, _) =>
+            {
+                statusLabel.Text = "Enter username...";
+            };
+
+            Shown += (_, _) => usernameBox.Focus();
+
+        }
+    
+        public string GetUsername()
+        {
+            return username;
+        }
+        private void TryAcceptLogin()
+        {
+            string _username = usernameBox.Text.Trim();
+            if(string.IsNullOrWhiteSpace(_username))
+            {
+                statusLabel.Text = "Username cannot be empty.";
+                usernameBox.Focus();
+                return;
+            }
+            username = _username;
+            DialogueResult = DialogResult.OK;
+            Close();
+        }
+
+        private void CancelLogin()
+        {
+            DialogResult = DialogueResult.Cancel;
+            Close();
+        }
+    
+    }
+}
